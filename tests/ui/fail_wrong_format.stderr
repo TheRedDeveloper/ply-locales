@@ -1,0 +1,11 @@
+error: Invalid language identifier in directory name 'invalid_dir' in '../../../../tests/locales_wrong_format': Language tags use hyphens ('-'), not underscores ('_').
+ --> tests/ui/fail_wrong_format.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_wrong_format")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Unexpected file 'notes.txt' in locales directory '../../../../tests/locales_wrong_format'. Expected a .ftl file or a locale directory.
+ --> tests/ui/fail_wrong_format.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_wrong_format")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

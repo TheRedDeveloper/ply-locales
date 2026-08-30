@@ -1,0 +1,63 @@
+error: Mismatched Fluent variables in message 'greet' for locale 'de-DE'
+        --> ../../../../tests/locales_bad_variables/de-DE.ftl:1
+         |
+       1 | greet = Hallo, { $user }!
+         |
+         = expected: [$name]
+         = found:    [$user]
+ --> tests/ui/fail_bad_variables.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_variables")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Mismatched Fluent variables in message 'order-summary' for locale 'de-DE'
+        --> ../../../../tests/locales_bad_variables/de-DE.ftl:2
+         |
+       2 | order-summary = Bestellung { $order_id } für { $client } hat { $item_count } Artikel.
+         |
+         = expected: [$order_id, $customer, $item_count]
+         = found:    [$order_id, $client, $item_count]
+ --> tests/ui/fail_bad_variables.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_variables")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Mismatched Fluent variables in message 'shared-photos' for locale 'de-DE'
+        --> ../../../../tests/locales_bad_variables/de-DE.ftl:4
+         |
+       4 | shared-photos =
+       5 |     {$user} {$photoCount ->
+       6 |         [one] hat ein neues Foto
+       7 |        *[other] hat {$photoCount} neue Fotos
+       8 |     } zu seinem Stream hinzugefügt.
+         |
+         = expected: [$userName, $photoCount, $userGender]
+         = found:    [$user, $photoCount]
+ --> tests/ui/fail_bad_variables.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_variables")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Mismatched Fluent variables in message 'balance' for locale 'ja-JP'
+        --> ../../../../tests/locales_bad_variables/ja-JP.ftl:3
+         |
+       3 | balance = 残高は { $amount } { $currency } です ({ $extra_param })。
+         |
+         = expected: [$amount, $currency]
+         = found:    [$amount, $currency, $extra_param]
+ --> tests/ui/fail_bad_variables.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_variables")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Mismatched Fluent variables in message 'greet' for locale 'ja-JP'
+        --> ../../../../tests/locales_bad_variables/ja-JP.ftl:1
+         |
+       1 | greet = こんにちは！
+         |
+         = expected: [$name]
+         = found:    []
+ --> tests/ui/fail_bad_variables.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_variables")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
