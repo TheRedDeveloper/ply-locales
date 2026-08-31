@@ -8,6 +8,35 @@ use syn::Error;
 use crate::loader::LocaleFile;
 
 #[derive(Clone, Debug)]
+pub struct NamedArgSpan {
+    pub name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct ReferenceSpan {
+    pub name: String,
+    pub start: usize,
+    pub end: usize,
+    pub positional_count: usize,
+    pub named_args: Vec<NamedArgSpan>,
+}
+
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct ParsedTerm {
+    pub id: String,
+    pub raw_definition: String,
+    pub file_path: PathBuf,
+    pub line: usize,
+    pub variables: Vec<String>,
+    pub term_references: Vec<ReferenceSpan>,
+    pub message_references: Vec<ReferenceSpan>,
+    pub function_references: Vec<ReferenceSpan>,
+}
+
+#[derive(Clone, Debug)]
 pub struct ParsedMessage {
     pub id: String,
     pub rust_ident: syn::Ident,
@@ -15,11 +44,16 @@ pub struct ParsedMessage {
     pub raw_definition: String,
     pub file_path: PathBuf,
     pub line: usize,
+    pub term_references: Vec<ReferenceSpan>,
+    pub message_references: Vec<ReferenceSpan>,
+    pub function_references: Vec<ReferenceSpan>,
 }
 
 #[derive(Clone, Debug)]
 pub struct ParsedLocale {
     pub messages: BTreeMap<String, ParsedMessage>,
+    pub terms: BTreeMap<String, ParsedTerm>,
+    pub file_contents: BTreeMap<PathBuf, String>,
 }
 
 pub fn to_rust_ident(name: &str) -> syn::Ident {
@@ -274,7 +308,13 @@ fn format_syntax_error(
         }
     }
 
-    // Check if error is related to an unclosed select or placeable on an earlier line
+    enum UnclosedKind {
+        Select(usize),
+        Function(String),
+        Placeable,
+    }
+
+    // Check if error is related to an unclosed select, function call, or placeable on an earlier line
     let mut unclosed_ctx = None;
     if matches!(
         &err.kind,
@@ -296,18 +336,83 @@ fn format_syntax_error(
                 } else {
                     let between = &content[i..err.pos.start.min(content.len())];
                     let (open_l, open_c) = offset_to_line_col(content, i);
+
+                    // Check for unclosed function call in `between`
+                    let mut paren_depth = 0;
+                    let mut unclosed_func = None;
+                    for (j, ch) in between.char_indices().rev() {
+                        if ch == ')' {
+                            paren_depth += 1;
+                        } else if ch == '(' {
+                            if paren_depth > 0 {
+                                paren_depth -= 1;
+                            } else {
+                                let before_paren = between[..j].trim_end();
+                                let func_name: String = before_paren
+                                    .chars()
+                                    .rev()
+                                    .take_while(|ch| {
+                                        ch.is_alphanumeric() || *ch == '_' || *ch == '-'
+                                    })
+                                    .collect::<String>()
+                                    .chars()
+                                    .rev()
+                                    .collect();
+                                if !func_name.is_empty() {
+                                    unclosed_func = Some(func_name);
+                                }
+                                break;
+                            }
+                        }
+                    }
+
                     if open_l < line {
-                        if let Some(arrow_rel) = between.find("->") {
+                        if let Some(func_name) = unclosed_func {
+                            unclosed_ctx =
+                                Some((open_l, open_c, UnclosedKind::Function(func_name)));
+                        } else if let Some(arrow_rel) = between.find("->") {
                             let arrow_pos = i + arrow_rel;
                             let (arrow_l, arrow_c) = offset_to_line_col(content, arrow_pos);
                             if arrow_l == open_l {
-                                unclosed_ctx = Some((open_l, open_c, Some(arrow_c + 1)));
+                                unclosed_ctx =
+                                    Some((open_l, open_c, UnclosedKind::Select(arrow_c + 1)));
                             } else {
-                                unclosed_ctx = Some((open_l, open_c, None));
+                                unclosed_ctx = Some((open_l, open_c, UnclosedKind::Placeable));
                             }
                         } else {
-                            unclosed_ctx = Some((open_l, open_c, None));
+                            unclosed_ctx = Some((open_l, open_c, UnclosedKind::Placeable));
                         }
+                    } else if let Some(func_name) = unclosed_func {
+                        let curr_ch = content[err.pos.start.min(content.len())..].chars().next();
+                        let msg = if curr_ch == Some('}') {
+                            format!("Expected ')' to close {func_name}")
+                        } else {
+                            format!(
+                                "Expected ')' to close {func_name} and '}}' to close expression"
+                            )
+                        };
+                        let w = line.to_string().len().max(1);
+                        let arrow_pad = " ".repeat(w);
+                        let pad = " ".repeat(w + 1);
+                        let prefix: String = line_content
+                            .chars()
+                            .take(col.saturating_sub(1))
+                            .map(|c| if c == '\t' { '\t' } else { ' ' })
+                            .collect();
+
+                        return format!(
+                            "{}--> {}:{}:{}\n{}|\n{:>w$} | {}\n{}| {prefix}^ {}\n",
+                            arrow_pad,
+                            file_path.display(),
+                            line,
+                            col,
+                            pad,
+                            line,
+                            line_content,
+                            pad,
+                            msg,
+                            w = w
+                        );
                     }
                     break;
                 }
@@ -315,7 +420,7 @@ fn format_syntax_error(
         }
     }
 
-    if let Some((open_l, open_c, maybe_arrow_end)) = unclosed_ctx {
+    if let Some((open_l, open_c, kind)) = unclosed_ctx {
         let open_line_content = content.lines().nth(open_l.saturating_sub(1)).unwrap_or("");
         let max_l = line.max(open_l);
         let w = max_l.to_string().len().max(1);
@@ -327,8 +432,6 @@ fn format_syntax_error(
             .map(|c| if c == '\t' { '\t' } else { ' ' })
             .collect();
 
-        let msg = friendly_error_message(&err.kind, content, err.pos.start);
-
         let mut snippet = format!(
             "{}--> {}:{}:{}\n{}|\n",
             arrow_pad,
@@ -338,27 +441,41 @@ fn format_syntax_error(
             pad
         );
 
-        if let Some(arrow_end) = maybe_arrow_end {
-            let open_prefix: String = open_line_content
-                .chars()
-                .take(open_c.saturating_sub(1))
-                .map(|c| if c == '\t' { '\t' } else { ' ' })
-                .collect();
-            let dash_count = arrow_end.saturating_sub(open_c) + 1;
-            let dashes = "-".repeat(dash_count);
-            snippet.push_str(&format!("{:>w$} | {}\n", open_l, open_line_content, w = w));
-            snippet.push_str(&format!(
-                "{}| {open_prefix}{dashes} Select expression opened here\n",
-                pad
-            ));
-        } else {
-            snippet.push_str(&format!(
-                "{:>w$} | {} <-- Opened {{\n",
-                open_l,
-                open_line_content,
-                w = w
-            ));
-        }
+        let msg = match kind {
+            UnclosedKind::Select(arrow_end) => {
+                let open_prefix: String = open_line_content
+                    .chars()
+                    .take(open_c.saturating_sub(1))
+                    .map(|c| if c == '\t' { '\t' } else { ' ' })
+                    .collect();
+                let dash_count = arrow_end.saturating_sub(open_c) + 1;
+                let dashes = "-".repeat(dash_count);
+                snippet.push_str(&format!("{:>w$} | {}\n", open_l, open_line_content, w = w));
+                snippet.push_str(&format!(
+                    "{}| {open_prefix}{dashes} Select expression opened here\n",
+                    pad
+                ));
+                friendly_error_message(&err.kind, content, err.pos.start)
+            }
+            UnclosedKind::Function(func_name) => {
+                snippet.push_str(&format!(
+                    "{:>w$} | {} <-- Opened {{ and {func_name}(\n",
+                    open_l,
+                    open_line_content,
+                    w = w
+                ));
+                format!("Expected ')' to close {func_name} and '}}' to close expression")
+            }
+            UnclosedKind::Placeable => {
+                snippet.push_str(&format!(
+                    "{:>w$} | {} <-- Opened {{\n",
+                    open_l,
+                    open_line_content,
+                    w = w
+                ));
+                friendly_error_message(&err.kind, content, err.pos.start)
+            }
+        };
 
         if line > open_l + 1 {
             snippet.push_str(&format!("{}...\n", pad));
@@ -394,7 +511,7 @@ fn format_syntax_error(
     )
 }
 
-fn offset_to_line_col(text: &str, offset: usize) -> (usize, usize) {
+pub fn offset_to_line_col(text: &str, offset: usize) -> (usize, usize) {
     let mut line = 1;
     let mut col = 1;
     for (i, c) in text.char_indices() {
@@ -411,11 +528,35 @@ fn offset_to_line_col(text: &str, offset: usize) -> (usize, usize) {
     (line, col)
 }
 
+fn count_braces(line: &str) -> (usize, usize) {
+    let mut opens = 0;
+    let mut closes = 0;
+    let mut in_string = false;
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' && in_string {
+            chars.next();
+            continue;
+        }
+        if ch == '"' {
+            in_string = !in_string;
+        } else if !in_string {
+            if ch == '{' {
+                opens += 1;
+            } else if ch == '}' {
+                closes += 1;
+            }
+        }
+    }
+    (opens, closes)
+}
+
 fn extract_raw_definition(content: &str, msg_id: &str) -> (String, usize) {
     let lines = content.lines().enumerate();
     let mut def_lines = Vec::new();
     let mut start_line = 1;
     let mut found = false;
+    let mut open_braces: usize = 0;
 
     for (idx, line) in lines {
         if !found {
@@ -425,9 +566,13 @@ fn extract_raw_definition(content: &str, msg_id: &str) -> (String, usize) {
                 found = true;
                 start_line = idx + 1;
                 def_lines.push(line);
+                let (opens, closes) = count_braces(line);
+                open_braces = (open_braces + opens).saturating_sub(closes);
             }
-        } else if line.starts_with(' ') || line.starts_with('\t') {
+        } else if open_braces > 0 || line.starts_with(' ') || line.starts_with('\t') {
             def_lines.push(line);
+            let (opens, closes) = count_braces(line);
+            open_braces = (open_braces + opens).saturating_sub(closes);
         } else {
             break;
         }
@@ -443,63 +588,206 @@ fn extract_raw_definition(content: &str, msg_id: &str) -> (String, usize) {
 pub fn parse_locale(files: &[LocaleFile], span: Span) -> Result<ParsedLocale, Error> {
     let mut combined_err: Option<Error> = None;
     let mut messages: BTreeMap<String, ParsedMessage> = BTreeMap::new();
+    let mut terms: BTreeMap<String, ParsedTerm> = BTreeMap::new();
+    let mut file_contents: BTreeMap<PathBuf, String> = BTreeMap::new();
 
     for file in files {
+        file_contents.insert(file.path.clone(), file.content.clone());
+
         match parse(file.content.as_str()) {
             Ok(resource) => {
                 for item in resource.body {
-                    if let Entry::Message(msg) = item {
-                        let msg_id = msg.id.name.to_string();
-                        let rust_ident = to_rust_ident(&msg_id);
-                        let mut variables = Vec::new();
+                    match item {
+                        Entry::Message(msg) => {
+                            let msg_id = msg.id.name.to_string();
+                            let rust_ident = to_rust_ident(&msg_id);
+                            let mut variables = Vec::new();
+                            let mut term_references = Vec::new();
+                            let mut message_references = Vec::new();
+                            let mut function_references = Vec::new();
 
-                        if let Some(ref val) = msg.value {
-                            collect_pattern_variables(val, &mut variables);
+                            if let Some(ref val) = msg.value {
+                                collect_pattern_variables(val, &mut variables);
+                                collect_pattern_references(
+                                    val,
+                                    &file.content,
+                                    &mut term_references,
+                                    &mut message_references,
+                                    &mut function_references,
+                                );
+                            }
+                            for attr in &msg.attributes {
+                                collect_pattern_variables(&attr.value, &mut variables);
+                                collect_pattern_references(
+                                    &attr.value,
+                                    &file.content,
+                                    &mut term_references,
+                                    &mut message_references,
+                                    &mut function_references,
+                                );
+                            }
+
+                            let (raw_definition, line) =
+                                extract_raw_definition(&file.content, &msg_id);
+
+                            messages.insert(
+                                msg_id.clone(),
+                                ParsedMessage {
+                                    id: msg_id,
+                                    rust_ident,
+                                    variables,
+                                    raw_definition,
+                                    file_path: file.path.clone(),
+                                    line,
+                                    term_references,
+                                    message_references,
+                                    function_references,
+                                },
+                            );
                         }
-                        for attr in &msg.attributes {
-                            collect_pattern_variables(&attr.value, &mut variables);
+                        Entry::Term(term) => {
+                            let term_id = format!("-{}", term.id.name);
+                            let mut variables = Vec::new();
+                            let mut term_references = Vec::new();
+                            let mut message_references = Vec::new();
+                            let mut function_references = Vec::new();
+
+                            collect_pattern_variables(&term.value, &mut variables);
+                            collect_pattern_references(
+                                &term.value,
+                                &file.content,
+                                &mut term_references,
+                                &mut message_references,
+                                &mut function_references,
+                            );
+
+                            for attr in &term.attributes {
+                                collect_pattern_variables(&attr.value, &mut variables);
+                                collect_pattern_references(
+                                    &attr.value,
+                                    &file.content,
+                                    &mut term_references,
+                                    &mut message_references,
+                                    &mut function_references,
+                                );
+                            }
+
+                            let (raw_definition, line) =
+                                extract_raw_definition(&file.content, &term_id);
+
+                            terms.insert(
+                                term_id.clone(),
+                                ParsedTerm {
+                                    id: term_id,
+                                    raw_definition,
+                                    file_path: file.path.clone(),
+                                    line,
+                                    variables,
+                                    term_references,
+                                    message_references,
+                                    function_references,
+                                },
+                            );
                         }
-
-                        let (raw_definition, line) = extract_raw_definition(&file.content, &msg_id);
-
-                        messages.insert(
-                            msg_id.clone(),
-                            ParsedMessage {
-                                id: msg_id,
-                                rust_ident,
-                                variables,
-                                raw_definition,
-                                file_path: file.path.clone(),
-                                line,
-                            },
-                        );
+                        _ => {}
                     }
                 }
             }
             Err((resource, parser_errors)) => {
                 for item in resource.body {
-                    if let Entry::Message(msg) = item {
-                        let msg_id = msg.id.name.to_string();
-                        let rust_ident = to_rust_ident(&msg_id);
-                        let mut variables = Vec::new();
-                        if let Some(ref val) = msg.value {
-                            collect_pattern_variables(val, &mut variables);
+                    match item {
+                        Entry::Message(msg) => {
+                            let msg_id = msg.id.name.to_string();
+                            let rust_ident = to_rust_ident(&msg_id);
+                            let mut variables = Vec::new();
+                            let mut term_references = Vec::new();
+                            let mut message_references = Vec::new();
+                            let mut function_references = Vec::new();
+
+                            if let Some(ref val) = msg.value {
+                                collect_pattern_variables(val, &mut variables);
+                                collect_pattern_references(
+                                    val,
+                                    &file.content,
+                                    &mut term_references,
+                                    &mut message_references,
+                                    &mut function_references,
+                                );
+                            }
+                            for attr in &msg.attributes {
+                                collect_pattern_variables(&attr.value, &mut variables);
+                                collect_pattern_references(
+                                    &attr.value,
+                                    &file.content,
+                                    &mut term_references,
+                                    &mut message_references,
+                                    &mut function_references,
+                                );
+                            }
+
+                            let (raw_definition, line) =
+                                extract_raw_definition(&file.content, &msg_id);
+
+                            messages.insert(
+                                msg_id.clone(),
+                                ParsedMessage {
+                                    id: msg_id,
+                                    rust_ident,
+                                    variables,
+                                    raw_definition,
+                                    file_path: file.path.clone(),
+                                    line,
+                                    term_references,
+                                    message_references,
+                                    function_references,
+                                },
+                            );
                         }
-                        for attr in &msg.attributes {
-                            collect_pattern_variables(&attr.value, &mut variables);
+                        Entry::Term(term) => {
+                            let term_id = format!("-{}", term.id.name);
+                            let mut variables = Vec::new();
+                            let mut term_references = Vec::new();
+                            let mut message_references = Vec::new();
+                            let mut function_references = Vec::new();
+
+                            collect_pattern_variables(&term.value, &mut variables);
+                            collect_pattern_references(
+                                &term.value,
+                                &file.content,
+                                &mut term_references,
+                                &mut message_references,
+                                &mut function_references,
+                            );
+
+                            for attr in &term.attributes {
+                                collect_pattern_variables(&attr.value, &mut variables);
+                                collect_pattern_references(
+                                    &attr.value,
+                                    &file.content,
+                                    &mut term_references,
+                                    &mut message_references,
+                                    &mut function_references,
+                                );
+                            }
+
+                            let (raw_definition, line) =
+                                extract_raw_definition(&file.content, &term_id);
+
+                            terms.insert(
+                                term_id.clone(),
+                                ParsedTerm {
+                                    id: term_id,
+                                    raw_definition,
+                                    file_path: file.path.clone(),
+                                    line,
+                                    variables,
+                                    term_references,
+                                    message_references,
+                                    function_references,
+                                },
+                            );
                         }
-                        let (raw_definition, line) = extract_raw_definition(&file.content, &msg_id);
-                        messages.insert(
-                            msg_id.clone(),
-                            ParsedMessage {
-                                id: msg_id,
-                                rust_ident,
-                                variables,
-                                raw_definition,
-                                file_path: file.path.clone(),
-                                line,
-                            },
-                        );
+                        _ => {}
                     }
                 }
 
@@ -526,7 +814,154 @@ pub fn parse_locale(files: &[LocaleFile], span: Span) -> Result<ParsedLocale, Er
         return Err(err);
     }
 
-    Ok(ParsedLocale { messages })
+    Ok(ParsedLocale {
+        messages,
+        terms,
+        file_contents,
+    })
+}
+
+pub fn subslice_offset(haystack: &str, needle: &str) -> usize {
+    let h_start = haystack.as_ptr() as usize;
+    let n_start = needle.as_ptr() as usize;
+    if n_start >= h_start && n_start <= h_start + haystack.len() {
+        n_start - h_start
+    } else {
+        0
+    }
+}
+
+fn collect_pattern_references(
+    pattern: &Pattern<&str>,
+    content: &str,
+    term_refs: &mut Vec<ReferenceSpan>,
+    msg_refs: &mut Vec<ReferenceSpan>,
+    func_refs: &mut Vec<ReferenceSpan>,
+) {
+    for element in &pattern.elements {
+        if let PatternElement::Placeable { expression } = element {
+            collect_expression_references(expression, content, term_refs, msg_refs, func_refs);
+        }
+    }
+}
+
+fn collect_expression_references(
+    expr: &Expression<&str>,
+    content: &str,
+    term_refs: &mut Vec<ReferenceSpan>,
+    msg_refs: &mut Vec<ReferenceSpan>,
+    func_refs: &mut Vec<ReferenceSpan>,
+) {
+    match expr {
+        Expression::Inline(inline) => {
+            collect_inline_references(inline, content, term_refs, msg_refs, func_refs);
+        }
+        Expression::Select { selector, variants } => {
+            collect_inline_references(selector, content, term_refs, msg_refs, func_refs);
+            for variant in variants {
+                collect_pattern_references(&variant.value, content, term_refs, msg_refs, func_refs);
+            }
+        }
+    }
+}
+
+fn collect_inline_references(
+    inline: &InlineExpression<&str>,
+    content: &str,
+    term_refs: &mut Vec<ReferenceSpan>,
+    msg_refs: &mut Vec<ReferenceSpan>,
+    func_refs: &mut Vec<ReferenceSpan>,
+) {
+    match inline {
+        InlineExpression::TermReference { id, arguments, .. } => {
+            let raw_start = subslice_offset(content, id.name);
+            let start = if raw_start > 0 && content.as_bytes().get(raw_start - 1) == Some(&b'-') {
+                raw_start - 1
+            } else {
+                raw_start
+            };
+            let end = raw_start + id.name.len();
+            let name = format!("-{}", id.name);
+            let mut positional_count = 0;
+            let mut named_args = Vec::new();
+            if let Some(args) = arguments {
+                positional_count = args.positional.len();
+                for named in &args.named {
+                    let n_start = subslice_offset(content, named.name.name);
+                    let n_end = n_start + named.name.name.len();
+                    named_args.push(NamedArgSpan {
+                        name: named.name.name.to_string(),
+                        start: n_start,
+                        end: n_end,
+                    });
+                }
+                for arg in &args.positional {
+                    collect_inline_references(arg, content, term_refs, msg_refs, func_refs);
+                }
+                for named in &args.named {
+                    collect_inline_references(
+                        &named.value,
+                        content,
+                        term_refs,
+                        msg_refs,
+                        func_refs,
+                    );
+                }
+            }
+            term_refs.push(ReferenceSpan {
+                name,
+                start,
+                end,
+                positional_count,
+                named_args,
+            });
+        }
+        InlineExpression::FunctionReference { id, arguments } => {
+            let start = subslice_offset(content, id.name);
+            let end = start + id.name.len();
+            let name = id.name.to_string();
+            let positional_count = arguments.positional.len();
+            let mut named_args = Vec::new();
+            for named in &arguments.named {
+                let n_start = subslice_offset(content, named.name.name);
+                let n_end = n_start + named.name.name.len();
+                named_args.push(NamedArgSpan {
+                    name: named.name.name.to_string(),
+                    start: n_start,
+                    end: n_end,
+                });
+            }
+            func_refs.push(ReferenceSpan {
+                name,
+                start,
+                end,
+                positional_count,
+                named_args,
+            });
+            for arg in &arguments.positional {
+                collect_inline_references(arg, content, term_refs, msg_refs, func_refs);
+            }
+            for named in &arguments.named {
+                collect_inline_references(&named.value, content, term_refs, msg_refs, func_refs);
+            }
+        }
+        InlineExpression::MessageReference { id, .. } => {
+            let start = subslice_offset(content, id.name);
+            let end = start + id.name.len();
+            let name = id.name.to_string();
+            msg_refs.push(ReferenceSpan {
+                name,
+                start,
+                end,
+                positional_count: 0,
+                named_args: Vec::new(),
+            });
+        }
+        InlineExpression::Placeable { expression } => {
+            collect_expression_references(expression, content, term_refs, msg_refs, func_refs);
+        }
+        _ => {}
+    }
 }
 
 fn collect_pattern_variables(pattern: &Pattern<&str>, vars: &mut Vec<String>) {

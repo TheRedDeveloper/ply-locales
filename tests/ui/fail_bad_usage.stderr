@@ -1,0 +1,162 @@
+error: Function 'NUMBER' requires exactly 1 positional argument, found 0 in message 'bad-func-call' for locale 'en-US'
+  --> ../../../../tests/locales_bad_usage/en-US.ftl:12:32-37
+   |
+12 | bad-func-call = Missing arg: { NUMBER() } and bad opt: { NUMBER($amount, badOpt: 1) }
+   |                                ^^^^^^ Expected 1 argument, found 0
+
+ --> tests/ui/fail_bad_usage.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_usage")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Unknown argument 'badOpt' in call to function 'NUMBER' in message 'bad-func-call' for locale 'en-US'
+  --> ../../../../tests/locales_bad_usage/en-US.ftl:12:74-79
+   |
+12 | bad-func-call = Missing arg: { NUMBER() } and bad opt: { NUMBER($amount, badOpt: 1) }
+   |                                                                          ^^^^^^ Function 'NUMBER' does not accept option 'badOpt'
+
+ --> tests/ui/fail_bad_usage.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_usage")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Missing argument 'case' in call to term '-param-term' in message 'bad-term-call' for locale 'en-US'
+  --> ../../../../tests/locales_bad_usage/en-US.ftl:11:28-38
+   |
+11 | bad-term-call = Missing: { -param-term } and extra: { -param-term(case: "nom", extra: "val") }
+   |                            ^^^^^^^^^^^ Missing argument 'case'
+
+ --> tests/ui/fail_bad_usage.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_usage")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Unknown argument 'extra' in call to term '-param-term' in message 'bad-term-call' for locale 'en-US'
+  --> ../../../../tests/locales_bad_usage/en-US.ftl:11:80-84
+   |
+11 | bad-term-call = Missing: { -param-term } and extra: { -param-term(case: "nom", extra: "val") }
+   |                                                                                ^^^^^ Term '-param-term' does not accept argument 'extra'
+
+ --> tests/ui/fail_bad_usage.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_usage")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Unknown function in message 'missing-dep' for locale 'en-US'
+  --> ../../../../tests/locales_bad_usage/en-US.ftl:13:51-62
+   |
+13 | missing-dep = Welcome to { -missing-brand } and { UNKNOWN_FUNC($val) }.
+   |                                                   ^^^^^^^^^^^^ Function 'UNKNOWN_FUNC' is not defined
+
+ --> tests/ui/fail_bad_usage.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_usage")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Missing dependency in message 'missing-dep' for locale 'en-US'
+  --> ../../../../tests/locales_bad_usage/en-US.ftl:13:28-41
+   |
+13 | missing-dep = Welcome to { -missing-brand } and { UNKNOWN_FUNC($val) }.
+   |                            ^^^^^^^^^^^^^^ Term '-missing-brand' is not defined in locale 'en-US'
+
+ --> tests/ui/fail_bad_usage.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_usage")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Circular dependency detected in locale 'en-US'
+ --> ../../../../tests/locales_bad_usage/en-US.ftl
+  |
+1 | -term-a = { -term-b }
+2 | -term-b =
+3 |     Term B referencing { -term-a }
+  |
+  = cycle: -term-a -> -term-b -> -term-a
+
+ --> tests/ui/fail_bad_usage.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_usage")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Circular dependency detected in locale 'en-US'
+ --> ../../../../tests/locales_bad_usage/en-US.ftl
+  |
+5 | -term-c = { -term-d }
+         ...
+       8 | -term-d = { -term-c }
+         |
+         = cycle: -term-c -> -term-d -> -term-c
+
+ --> tests/ui/fail_bad_usage.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_usage")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Mismatched Fluent variables in message 'greet' for locale 'de-DE'
+ --> ../../../../tests/locales_bad_usage/de-DE.ftl:1
+  |
+1 | greet = Hallo, { $user }!
+  |
+  = expected: [$name]
+  = found:    [$user]
+
+ --> tests/ui/fail_bad_usage.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_usage")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Mismatched Fluent variables in message 'order-summary' for locale 'de-DE'
+ --> ../../../../tests/locales_bad_usage/de-DE.ftl:2
+  |
+2 | order-summary = Bestellung { $order_id } für { $client } hat { $item_count } Artikel.
+  |
+  = expected: [$order_id, $customer, $item_count]
+  = found:    [$order_id, $client, $item_count]
+
+ --> tests/ui/fail_bad_usage.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_usage")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Mismatched Fluent variables in message 'shared-photos' for locale 'de-DE'
+ --> ../../../../tests/locales_bad_usage/de-DE.ftl:4
+  |
+4 | shared-photos =
+5 |     {$user} {$photoCount ->
+6 |         [one] hat ein neues Foto
+7 |        *[other] hat {$photoCount} neue Fotos
+8 |     } zu seinem Stream hinzugefügt.
+  |
+  = expected: [$userName, $photoCount, $userGender]
+  = found:    [$user, $photoCount]
+
+ --> tests/ui/fail_bad_usage.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_usage")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Mismatched Fluent variables in message 'balance' for locale 'ja-JP'
+ --> ../../../../tests/locales_bad_usage/ja-JP.ftl:3
+  |
+3 | balance = 残高は { $amount } { $currency } です ({ $extra_param })。
+  |
+  = expected: [$amount, $currency]
+  = found:    [$amount, $currency, $extra_param]
+
+ --> tests/ui/fail_bad_usage.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_usage")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Mismatched Fluent variables in message 'greet' for locale 'ja-JP'
+ --> ../../../../tests/locales_bad_usage/ja-JP.ftl:1
+  |
+1 | greet = こんにちは！
+  |
+  = expected: [$name]
+  = found:    []
+
+ --> tests/ui/fail_bad_usage.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_bad_usage")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
