@@ -17,17 +17,17 @@ fn param_conversion(
         "&str" | "&'staticstr" | "&'astr" | "&'_str" => {
             quote! {
                 let #arg_ident = match &positional[#idx] {
-                    ::fluent_bundle::FluentValue::String(ref s) => s.as_ref(),
-                    _ => return ::fluent_bundle::FluentValue::Error,
+                    fluent_bundle::FluentValue::String(ref s) => s.as_ref(),
+                    _ => return fluent_bundle::FluentValue::Error,
                 };
             }
         }
         "String" => {
             quote! {
                 let #arg_ident = match &positional[#idx] {
-                    ::fluent_bundle::FluentValue::String(ref s) => s.to_string(),
-                    ::fluent_bundle::FluentValue::Number(ref n) => n.as_string().to_string(),
-                    _ => return ::fluent_bundle::FluentValue::Error,
+                    fluent_bundle::FluentValue::String(ref s) => s.to_string(),
+                    fluent_bundle::FluentValue::Number(ref n) => n.as_string().to_string(),
+                    _ => return fluent_bundle::FluentValue::Error,
                 };
             }
         }
@@ -35,33 +35,33 @@ fn param_conversion(
         | "usize" | "f32" | "f64" => {
             quote! {
                 let #arg_ident: #ty = match &positional[#idx] {
-                    ::fluent_bundle::FluentValue::Number(ref n) => n.value as #ty,
-                    ::fluent_bundle::FluentValue::String(ref s) => match s.parse::<#ty>() {
+                    fluent_bundle::FluentValue::Number(ref n) => n.value as #ty,
+                    fluent_bundle::FluentValue::String(ref s) => match s.parse::<#ty>() {
                         Ok(v) => v,
-                        Err(_) => return ::fluent_bundle::FluentValue::Error,
+                        Err(_) => return fluent_bundle::FluentValue::Error,
                     },
-                    _ => return ::fluent_bundle::FluentValue::Error,
+                    _ => return fluent_bundle::FluentValue::Error,
                 };
             }
         }
         "bool" => {
             quote! {
                 let #arg_ident = match &positional[#idx] {
-                    ::fluent_bundle::FluentValue::String(ref s) => match s.as_ref() {
+                    fluent_bundle::FluentValue::String(ref s) => match s.as_ref() {
                         "true" | "1" => true,
                         "false" | "0" => false,
-                        _ => return ::fluent_bundle::FluentValue::Error,
+                        _ => return fluent_bundle::FluentValue::Error,
                     },
-                    ::fluent_bundle::FluentValue::Number(ref n) => n.value != 0.0,
-                    _ => return ::fluent_bundle::FluentValue::Error,
+                    fluent_bundle::FluentValue::Number(ref n) => n.value != 0.0,
+                    _ => return fluent_bundle::FluentValue::Error,
                 };
             }
         }
         _ => {
             quote! {
                 let #arg_ident = match &positional[#idx] {
-                    ::fluent_bundle::FluentValue::String(ref s) => s.as_ref(),
-                    _ => return ::fluent_bundle::FluentValue::Error,
+                    fluent_bundle::FluentValue::String(ref s) => s.as_ref(),
+                    _ => return fluent_bundle::FluentValue::Error,
                 };
             }
         }
@@ -80,6 +80,7 @@ pub fn generate_module(
     _warnings: &[String],
     user_items: &[syn::Item],
     custom_functions: &BTreeMap<String, CustomFunction>,
+    fluent_bundle_import: &proc_macro2::TokenStream,
 ) -> TokenStream {
     let default_locale = &parsed_locales[default_locale_id];
 
@@ -148,9 +149,9 @@ pub fn generate_module(
             quote! {
                 #[doc = #doc_comment]
                 pub fn #fn_name<'a>(
-                    #( #param_idents: impl Into<::fluent_bundle::FluentValue<'a>> ),*
+                    #( #param_idents: impl Into<fluent_bundle::FluentValue<'a>> ),*
                 ) -> String {
-                    let mut args = ::fluent_bundle::FluentArgs::new();
+                    let mut args = fluent_bundle::FluentArgs::new();
                     #(
                         args.set(#var_names, #param_idents.into());
                     )*
@@ -182,11 +183,11 @@ pub fn generate_module(
         let ret = &custom_fn.return_type;
         let ret_str = quote!(#ret).to_string().replace(' ', "");
         let return_expr = if ret_str.is_empty() || ret_str == "->()" {
-            quote! { ::fluent_bundle::FluentValue::None }
+            quote! { fluent_bundle::FluentValue::None }
         } else if ret_str.contains("&str") {
-            quote! { ::fluent_bundle::FluentValue::String(::std::borrow::Cow::Owned(result.to_string())) }
+            quote! { fluent_bundle::FluentValue::String(::std::borrow::Cow::Owned(result.to_string())) }
         } else if ret_str.contains("bool") {
-            quote! { ::fluent_bundle::FluentValue::String(::std::borrow::Cow::Borrowed(if result { "true" } else { "false" })) }
+            quote! { fluent_bundle::FluentValue::String(::std::borrow::Cow::Borrowed(if result { "true" } else { "false" })) }
         } else {
             quote! { result.into() }
         };
@@ -194,7 +195,7 @@ pub fn generate_module(
         quote! {
             let _ = bundle.add_function(#fluent_name, |positional, _named| {
                 if positional.len() != #param_count {
-                    return ::fluent_bundle::FluentValue::Error;
+                    return fluent_bundle::FluentValue::Error;
                 }
                 #( #param_extractions )*
                 let result = #fn_ident(#( #arg_idents ),*);
@@ -206,6 +207,8 @@ pub fn generate_module(
     quote! {
         #(#mod_attrs)*
         #vis mod #mod_ident {
+            #fluent_bundle_import
+
             #( #user_items )*
 
             #( #warning_tokens )*
@@ -225,7 +228,7 @@ pub fn generate_module(
             static BUNDLES: ::std::sync::RwLock<
                 ::std::collections::BTreeMap<
                     &'static str,
-                    ::fluent_bundle::concurrent::FluentBundle<::fluent_bundle::FluentResource>,
+                    fluent_bundle::concurrent::FluentBundle<fluent_bundle::FluentResource>,
                 >,
             > = ::std::sync::RwLock::new(::std::collections::BTreeMap::new());
 
@@ -259,12 +262,12 @@ pub fn generate_module(
                 if let ::std::collections::btree_map::Entry::Vacant(entry) = bundles.entry(locale) {
                     if let Some((_, raw_files)) = RAW_LOCALES.iter().find(|(loc, _)| *loc == locale) {
                         let langid = locale.parse().unwrap();
-                        let mut bundle = ::fluent_bundle::concurrent::FluentBundle::new_concurrent(vec![langid]);
+                        let mut bundle = fluent_bundle::concurrent::FluentBundle::new_concurrent(vec![langid]);
                         bundle.set_use_isolating(false);
                         let _ = bundle.add_builtins();
                         #( #custom_fn_registrations )*
                         for ftl in *raw_files {
-                            if let Ok(res) = ::fluent_bundle::FluentResource::try_new(ftl.to_string()) {
+                            if let Ok(res) = fluent_bundle::FluentResource::try_new(ftl.to_string()) {
                                 let _ = bundle.add_resource(res);
                             }
                         }
@@ -273,7 +276,7 @@ pub fn generate_module(
                 }
             }
 
-            fn format_message(msg_id: &str, args: Option<&::fluent_bundle::FluentArgs>) -> String {
+            fn format_message(msg_id: &str, args: Option<&fluent_bundle::FluentArgs>) -> String {
                 let cur = current_locale();
                 let cur_static = AVAILABLE_LOCALES
                     .iter()

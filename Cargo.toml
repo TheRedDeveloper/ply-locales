@@ -1,6 +1,6 @@
 [package]
 name = "ply-locales"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "0BSD"
 description = "Easy compile-checked Fluent localization with intellisense support for Rust"
@@ -19,6 +19,7 @@ quote = "1"
 proc-macro2 = "1"
 fluent-syntax = "0.12"
 unic-langid = "0.9"
+toml = "0.8"
 
 [build-dependencies]
 autocfg = "1"

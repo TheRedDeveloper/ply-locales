@@ -43,6 +43,55 @@ impl Parse for MacroArgs {
     }
 }
 
+fn resolve_fluent_bundle_source(
+    manifest_path: &Path,
+    span: proc_macro2::Span,
+) -> Result<proc_macro2::TokenStream, syn::Error> {
+    let cargo_toml_path = manifest_path.join("Cargo.toml");
+    let content = match std::fs::read_to_string(&cargo_toml_path) {
+        Ok(s) => s,
+        Err(_) => {
+            return Ok(quote::quote!(
+                use ::fluent_bundle;
+            ))
+        }
+    };
+
+    let toml_val: toml::Value = match toml::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => {
+            return Ok(quote::quote!(
+                use ::fluent_bundle;
+            ))
+        }
+    };
+
+    if let Some(deps) = toml_val.get("dependencies").and_then(|d| d.as_table()) {
+        for (dep_name, dep_val) in deps {
+            if dep_name == "ply-engine" || dep_name == "ply_engine" {
+                let has_locales = dep_val
+                    .get("features")
+                    .and_then(|f| f.as_array())
+                    .is_some_and(|arr| arr.iter().any(|item| item.as_str() == Some("locales")));
+                if has_locales {
+                    return Ok(quote::quote!(
+                        use ::ply_engine::fluent_bundle;
+                    ));
+                } else {
+                    return Err(syn::Error::new(
+                        span,
+                        "ply-engine was found in dependencies, but the 'locales' feature is not enabled. Please enable it in Cargo.toml: ply-engine = { version = \"...\", features = [\"locales\"] }",
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(quote::quote!(
+        use ::fluent_bundle;
+    ))
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct CustomFunction {
     pub(crate) rust_ident: syn::Ident,
@@ -176,6 +225,11 @@ pub fn ply_locales(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     }
 
+    let fluent_bundle_import = match resolve_fluent_bundle_source(manifest_path, args.path.span()) {
+        Ok(import) => import,
+        Err(err) => return err.to_compile_error().into(),
+    };
+
     let expanded = codegen::generate_module(
         &item_mod.vis,
         &item_mod.ident,
@@ -187,6 +241,7 @@ pub fn ply_locales(attr: TokenStream, item: TokenStream) -> TokenStream {
         &warnings,
         &user_items,
         &custom_functions,
+        &fluent_bundle_import,
     );
 
     TokenStream::from(expanded)
