@@ -1,0 +1,10 @@
+error: Syntax error in Fluent file '../../../../tests/locales_syntax_error/en-US.ftl'
+ --> ../../../../tests/locales_syntax_error/en-US.ftl:1:16-17
+  |
+1 | greet = Hello, {}!
+  |                ^^ Expression can't be empty
+
+ --> tests/ui/fail_syntax_error.rs:3:15
+  |
+3 | #[ply_locales("../../../../tests/locales_syntax_error")]
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
