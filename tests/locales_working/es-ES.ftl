@@ -27,3 +27,5 @@ shared-photos =
         [female] ella
        *[other] ellos
     }.
+custom-upper = Formateado: { UPPER($text) }
+sum-result = Suma: { CUSTOM_CALC($a, $b) }

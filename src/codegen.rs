@@ -5,6 +5,68 @@ use syn::Visibility;
 
 use crate::ast_util::{to_rust_ident, ParsedLocale};
 use crate::loader::LocalesData;
+use crate::CustomFunction;
+
+fn param_conversion(
+    ty: &syn::Type,
+    idx: usize,
+    arg_ident: &syn::Ident,
+) -> proc_macro2::TokenStream {
+    let ty_str = quote!(#ty).to_string().replace(' ', "");
+    match ty_str.as_str() {
+        "&str" | "&'staticstr" | "&'astr" | "&'_str" => {
+            quote! {
+                let #arg_ident = match &positional[#idx] {
+                    ::fluent_bundle::FluentValue::String(ref s) => s.as_ref(),
+                    _ => return ::fluent_bundle::FluentValue::Error,
+                };
+            }
+        }
+        "String" => {
+            quote! {
+                let #arg_ident = match &positional[#idx] {
+                    ::fluent_bundle::FluentValue::String(ref s) => s.to_string(),
+                    ::fluent_bundle::FluentValue::Number(ref n) => n.as_string().to_string(),
+                    _ => return ::fluent_bundle::FluentValue::Error,
+                };
+            }
+        }
+        "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64" | "u128"
+        | "usize" | "f32" | "f64" => {
+            quote! {
+                let #arg_ident: #ty = match &positional[#idx] {
+                    ::fluent_bundle::FluentValue::Number(ref n) => n.value as #ty,
+                    ::fluent_bundle::FluentValue::String(ref s) => match s.parse::<#ty>() {
+                        Ok(v) => v,
+                        Err(_) => return ::fluent_bundle::FluentValue::Error,
+                    },
+                    _ => return ::fluent_bundle::FluentValue::Error,
+                };
+            }
+        }
+        "bool" => {
+            quote! {
+                let #arg_ident = match &positional[#idx] {
+                    ::fluent_bundle::FluentValue::String(ref s) => match s.as_ref() {
+                        "true" | "1" => true,
+                        "false" | "0" => false,
+                        _ => return ::fluent_bundle::FluentValue::Error,
+                    },
+                    ::fluent_bundle::FluentValue::Number(ref n) => n.value != 0.0,
+                    _ => return ::fluent_bundle::FluentValue::Error,
+                };
+            }
+        }
+        _ => {
+            quote! {
+                let #arg_ident = match &positional[#idx] {
+                    ::fluent_bundle::FluentValue::String(ref s) => s.as_ref(),
+                    _ => return ::fluent_bundle::FluentValue::Error,
+                };
+            }
+        }
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn generate_module(
@@ -16,6 +78,8 @@ pub fn generate_module(
     parsed_locales: &BTreeMap<String, ParsedLocale>,
     default_locale_id: &str,
     _warnings: &[String],
+    user_items: &[syn::Item],
+    custom_functions: &BTreeMap<String, CustomFunction>,
 ) -> TokenStream {
     let default_locale = &parsed_locales[default_locale_id];
 
@@ -96,9 +160,54 @@ pub fn generate_module(
         }
     });
 
+    let custom_fn_registrations = custom_functions.values().map(|custom_fn| {
+        let fn_ident = &custom_fn.rust_ident;
+        let fluent_name = &custom_fn.fluent_name;
+        let param_count = custom_fn.param_count;
+
+        let param_extractions: Vec<_> = custom_fn
+            .param_types
+            .iter()
+            .enumerate()
+            .map(|(idx, ty)| {
+                let arg_ident = quote::format_ident!("_arg_{}", idx);
+                param_conversion(ty, idx, &arg_ident)
+            })
+            .collect();
+
+        let arg_idents: Vec<_> = (0..param_count)
+            .map(|idx| quote::format_ident!("_arg_{}", idx))
+            .collect();
+
+        let ret = &custom_fn.return_type;
+        let ret_str = quote!(#ret).to_string().replace(' ', "");
+        let return_expr = if ret_str.is_empty() || ret_str == "->()" {
+            quote! { ::fluent_bundle::FluentValue::None }
+        } else if ret_str.contains("&str") {
+            quote! { ::fluent_bundle::FluentValue::String(::std::borrow::Cow::Owned(result.to_string())) }
+        } else if ret_str.contains("bool") {
+            quote! { ::fluent_bundle::FluentValue::String(::std::borrow::Cow::Borrowed(if result { "true" } else { "false" })) }
+        } else {
+            quote! { result.into() }
+        };
+
+        quote! {
+            let _ = bundle.add_function(#fluent_name, |positional, _named| {
+                if positional.len() != #param_count {
+                    return ::fluent_bundle::FluentValue::Error;
+                }
+                #( #param_extractions )*
+                let result = #fn_ident(#( #arg_idents ),*);
+                #return_expr
+            });
+        }
+    });
+
     quote! {
         #(#mod_attrs)*
         #vis mod #mod_ident {
+            #( #user_items )*
+
             #( #warning_tokens )*
 
             /// A list of all available locale identifiers.
@@ -153,6 +262,7 @@ pub fn generate_module(
                         let mut bundle = ::fluent_bundle::concurrent::FluentBundle::new_concurrent(vec![langid]);
                         bundle.set_use_isolating(false);
                         let _ = bundle.add_builtins();
+                        #( #custom_fn_registrations )*
                         for ftl in *raw_files {
                             if let Ok(res) = ::fluent_bundle::FluentResource::try_new(ftl.to_string()) {
                                 let _ = bundle.add_resource(res);

@@ -1,7 +1,15 @@
 use ply_locales::ply_locales;
 
 #[ply_locales("tests/locales_working")]
-pub mod t {}
+pub mod t {
+    pub fn upper(s: &str) -> String {
+        s.to_uppercase()
+    }
+
+    pub fn custom_calc(a: i64, b: i64) -> i64 {
+        a + b
+    }
+}
 
 #[test]
 fn test_locales_working_runtime() {
@@ -12,6 +20,13 @@ fn test_locales_working_runtime() {
     assert_eq!(t::menu_file(), "File");
     assert_eq!(t::menu_edit(), "Edit");
     assert_eq!(t::menu_save(), "Save");
+
+    // Custom function tests
+    assert_eq!(t::custom_upper("alex"), "Formatted: ALEX");
+    assert_eq!(t::sum_result(10, 25), "Sum: 35");
+    // Verify direct Rust function invocation also works
+    assert_eq!(t::upper("hello"), "HELLO");
+    assert_eq!(t::custom_calc(3, 4), 7);
 
     // Terms and Functions test
     assert_eq!(t::app_title(), "Ply Engine");
@@ -50,12 +65,18 @@ fn test_locales_working_runtime() {
         "Carlos agregó 2 fotos nuevas a su flujo de él."
     );
 
+    assert_eq!(t::custom_upper("alex"), "Formateado: ALEX");
+    assert_eq!(t::sum_result(10, 25), "Suma: 35");
+
     assert_eq!(t::missing_in_es(), "Only in English");
 
     // Switch to fr
     assert!(t::set_locale("fr"));
     assert_eq!(t::current_locale(), "fr");
     assert_eq!(t::hello(), "Bonjour le monde!");
+
+    assert_eq!(t::custom_upper("alex"), "Formaté: ALEX");
+    assert_eq!(t::sum_result(10, 25), "Somme: 35");
 
     assert_eq!(
         t::user_status("Amélie", 3),

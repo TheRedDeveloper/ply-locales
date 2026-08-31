@@ -27,3 +27,5 @@ shared-photos =
         [female] son flux
        *[other] leur flux
     }.
+custom-upper = Formaté: { UPPER($text) }
+sum-result = Somme: { CUSTOM_CALC($a, $b) }

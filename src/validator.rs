@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use syn::Error;
 
 use crate::ast_util::{offset_to_line_col, ParsedLocale, ReferenceSpan};
+use crate::CustomFunction;
 
 fn format_snippet_and_notes(
     file_path: &Path,
@@ -240,10 +241,65 @@ fn validate_calls(
     locale_id: &str,
     locale: &ParsedLocale,
     span: Span,
+    custom_functions: &BTreeMap<String, CustomFunction>,
     combined_err: &mut Option<Error>,
 ) {
     // 1. Validate function calls
     for func_ref in function_references {
+        if let Some(custom_fn) = custom_functions.get(&func_ref.name) {
+            // Check positional arguments count for custom function
+            if func_ref.positional_count != custom_fn.param_count {
+                let err_msg = format_span_error(
+                    file_path,
+                    content,
+                    func_ref.start,
+                    func_ref.end,
+                    &format!(
+                        "Function '{}' requires exactly {} positional argument{}, found {} in {entry_kind} '{entry_id}' for locale '{locale_id}'",
+                        func_ref.name,
+                        custom_fn.param_count,
+                        if custom_fn.param_count == 1 { "" } else { "s" },
+                        func_ref.positional_count
+                    ),
+                    &format!(
+                        "Expected {} argument{}, found {}",
+                        custom_fn.param_count,
+                        if custom_fn.param_count == 1 { "" } else { "s" },
+                        func_ref.positional_count
+                    ),
+                );
+                let err = Error::new(span, err_msg);
+                match combined_err {
+                    Some(e) => e.combine(err),
+                    None => *combined_err = Some(err),
+                }
+            }
+
+            // Custom functions do not accept named options
+            for named in &func_ref.named_args {
+                let err_msg = format_span_error(
+                    file_path,
+                    content,
+                    named.start,
+                    named.end,
+                    &format!(
+                        "Unknown argument '{}' in call to function '{}' in {entry_kind} '{entry_id}' for locale '{locale_id}'",
+                        named.name, func_ref.name
+                    ),
+                    &format!(
+                        "Function '{}' does not accept option '{}'",
+                        func_ref.name, named.name
+                    ),
+                );
+                let err = Error::new(span, err_msg);
+                match combined_err {
+                    Some(e) => e.combine(err),
+                    None => *combined_err = Some(err),
+                }
+            }
+            continue;
+        }
+
         if func_ref.name != "NUMBER" && func_ref.name != "DATETIME" {
             let err_msg = format_span_error(
                 file_path,
@@ -419,6 +475,7 @@ pub fn validate_locales(
     locales: &BTreeMap<String, ParsedLocale>,
     default_locale_id: &str,
     span: Span,
+    custom_functions: &BTreeMap<String, CustomFunction>,
 ) -> Result<Vec<String>, Error> {
     let default_locale = match locales.get(default_locale_id) {
         Some(l) => l,
@@ -457,6 +514,7 @@ pub fn validate_locales(
                 locale_id,
                 locale,
                 span,
+                custom_functions,
                 &mut combined_err,
             );
 
@@ -503,6 +561,7 @@ pub fn validate_locales(
                 locale_id,
                 locale,
                 span,
+                custom_functions,
                 &mut combined_err,
             );
 

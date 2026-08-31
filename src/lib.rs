@@ -43,10 +43,72 @@ impl Parse for MacroArgs {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct CustomFunction {
+    pub(crate) rust_ident: syn::Ident,
+    pub(crate) fluent_name: String,
+    pub(crate) param_count: usize,
+    pub(crate) param_types: Vec<syn::Type>,
+    pub(crate) return_type: syn::ReturnType,
+}
+
 #[proc_macro_attribute]
 pub fn ply_locales(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr as MacroArgs);
     let item_mod = parse_macro_input!(item as ItemMod);
+
+    let user_items = match item_mod.content {
+        Some((_, items)) => items,
+        None => Vec::new(),
+    };
+
+    let mut custom_functions = BTreeMap::new();
+    for item in &user_items {
+        if let syn::Item::Fn(func) = item {
+            let ident = &func.sig.ident;
+            let fluent_name = ident.to_string().to_uppercase();
+
+            let mut param_types = Vec::new();
+            for input in &func.sig.inputs {
+                match input {
+                    syn::FnArg::Receiver(recv) => {
+                        return Error::new(
+                            recv.self_token.span,
+                            "Custom Fluent functions cannot have a 'self' parameter",
+                        )
+                        .to_compile_error()
+                        .into();
+                    }
+                    syn::FnArg::Typed(pat_type) => {
+                        param_types.push((*pat_type.ty).clone());
+                    }
+                }
+            }
+
+            if let Some(existing) = custom_functions.get(&fluent_name) as Option<&CustomFunction> {
+                return Error::new(
+                    ident.span(),
+                    format!(
+                        "Duplicate Fluent function name '{}' for Rust functions '{}' and '{}'",
+                        fluent_name, existing.rust_ident, ident
+                    ),
+                )
+                .to_compile_error()
+                .into();
+            }
+
+            custom_functions.insert(
+                fluent_name.clone(),
+                CustomFunction {
+                    rust_ident: ident.clone(),
+                    fluent_name,
+                    param_count: param_types.len(),
+                    param_types,
+                    return_type: func.sig.output.clone(),
+                },
+            );
+        }
+    }
 
     let manifest_dir = match std::env::var("CARGO_MANIFEST_DIR") {
         Ok(dir) => dir,
@@ -100,6 +162,7 @@ pub fn ply_locales(attr: TokenStream, item: TokenStream) -> TokenStream {
         &parsed_locales,
         &default_locale_id,
         args.default.as_ref().map_or(args.path.span(), |d| d.span()),
+        &custom_functions,
     ) {
         Ok(w) => w,
         Err(err) => return err.to_compile_error().into(),
@@ -122,6 +185,8 @@ pub fn ply_locales(attr: TokenStream, item: TokenStream) -> TokenStream {
         &parsed_locales,
         &default_locale_id,
         &warnings,
+        &user_items,
+        &custom_functions,
     );
 
     TokenStream::from(expanded)

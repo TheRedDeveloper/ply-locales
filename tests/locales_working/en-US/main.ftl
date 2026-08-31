@@ -25,3 +25,5 @@ shared-photos =
         [female] her stream
        *[other] their stream
     }.
+custom-upper = Formatted: { UPPER($text) }
+sum-result = Sum: { CUSTOM_CALC($a, $b) }
