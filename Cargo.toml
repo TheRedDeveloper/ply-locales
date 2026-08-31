@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 license = "0BSD"
 description = "Easy compile-checked Fluent localization with intellisense support for Rust"
+keywords = ["fluent", "localization", "i18n", "l10n", "macro"]
+categories = ["internationalization"]
+repository = "https://github.com/TheRedDeveloper/ply-locales"
+documentation = "https://plyx.iz.rs/docs/localization"
+readme = "README.md"
 
 [lib]
 proc-macro = true
