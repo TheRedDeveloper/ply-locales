@@ -15,7 +15,7 @@
 
 ---
 
-`ply-locales` is a compile-checked procedural macro for Project Fluent. It checks your `.ftl` translation files at build time, validates variable names across all locales, and generates typed Rust functions for every message.
+`ply-locales` is a compile-checked procedural macro for Project Fluent. It checks your `.ftl` translation files at build time and generates typed Rust functions for every message.
 
 ## What you get
 
@@ -79,9 +79,30 @@ pub fn current_locale() -> String;
 pub fn your_message_name(args...) -> String; // for every message in your .ftl files
 ```
 
+You can also define custom Rust functions:
+
+```rust
+#[ply_locales::ply_locales("locales")]
+pub mod t {
+    pub fn upper(s: &str) -> String {
+        s.to_uppercase()
+    }
+}
+```
+
+And call them in your `.ftl` templates:
+
+```fluent
+greet = Hello, { UPPER($name) }!
+```
+
+- Rust `snake_case` functions map to uppercase in Fluent
+- Calls in Fluent templates are checked at compile time
+- Functions remain accessible directly in Rust as well
+
 ## Compile errors
 
-If a translated locale defines different variables than the default locale, a readable error is emitted at compile time:
+Readable errors are always emitted at compile time, such as mismatched variables:
 
 ```text
 error: Mismatched Fluent variables in message 'order-summary' for locale 'de-DE'
@@ -93,7 +114,29 @@ error: Mismatched Fluent variables in message 'order-summary' for locale 'de-DE'
          = found:    [$order_id, $client, $item_count]
 ```
 
-Syntax errors in `.ftl` files also emit readable compile-time errors:
+Missing arguments:
+
+```text
+error: Missing argument 'hey' in call to term '-variable-inside' in message 'greet' for locale 'en-US'
+        --> locales/en-US.ftl:2:28-43
+         |
+       2 | greet = Hello, { $name } { -variable-inside }!
+         |                            ^^^^^^^^^^^^^^^^ Missing argument 'hey'
+```
+
+Circular dependencies:
+
+```text
+error: Circular dependency detected in locale 'en-US'
+        --> locales/en-US.ftl
+         |
+       1 | -a = { -b }
+       2 | -b = { -a }
+         |
+         = cycle: -a -> -b -> -a
+```
+
+and many more! Syntax errors also emit readable compile-time errors:
 
 ```text
 error: Syntax error in Fluent file 'locales/en-US.ftl'
@@ -106,6 +149,8 @@ error: Syntax error in Fluent file 'locales/en-US.ftl'
 Missing translations emit a compiler warning and fall back to the default language at runtime.
 
 Additional messages in a translated locale emit a compiler warning and are ignored at runtime.
+
+This makes shooting yourself in the foot a lot harder.
 
 ## License
 
