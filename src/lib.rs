@@ -134,6 +134,18 @@ pub fn ply_locales(attr: TokenStream, item: TokenStream) -> TokenStream {
                 }
             }
 
+            if fluent_name == "NUMBER" || fluent_name == "DATETIME" || fluent_name == "VOID" {
+                return Error::new(
+                    ident.span(),
+                    format!(
+                        "Cannot define custom function '{}': '{}' is a built-in Fluent function",
+                        ident, fluent_name
+                    ),
+                )
+                .to_compile_error()
+                .into();
+            }
+
             if let Some(existing) = custom_functions.get(&fluent_name) as Option<&CustomFunction> {
                 return Error::new(
                     ident.span(),

@@ -244,10 +244,8 @@ fn validate_calls(
     custom_functions: &BTreeMap<String, CustomFunction>,
     combined_err: &mut Option<Error>,
 ) {
-    // 1. Validate function calls
     for func_ref in function_references {
         if let Some(custom_fn) = custom_functions.get(&func_ref.name) {
-            // Check positional arguments count for custom function
             if func_ref.positional_count != custom_fn.param_count {
                 let err_msg = format_span_error(
                     file_path,
@@ -300,7 +298,7 @@ fn validate_calls(
             continue;
         }
 
-        if func_ref.name != "NUMBER" && func_ref.name != "DATETIME" {
+        if func_ref.name != "NUMBER" && func_ref.name != "DATETIME" && func_ref.name != "VOID" {
             let err_msg = format_span_error(
                 file_path,
                 content,
@@ -317,7 +315,28 @@ fn validate_calls(
             continue;
         }
 
-        // Check positional arguments count: builtins NUMBER and DATETIME require exactly 1 positional argument
+        if func_ref.name == "VOID" {
+            for named in &func_ref.named_args {
+                let err_msg = format_span_error(
+                    file_path,
+                    content,
+                    named.start,
+                    named.end,
+                    &format!(
+                        "Named argument '{}' in call to VOID() in {entry_kind} '{entry_id}' for locale '{locale_id}'",
+                        named.name
+                    ),
+                    "VOID() does not accept named arguments",
+                );
+                let err = Error::new(span, err_msg);
+                match combined_err {
+                    Some(e) => e.combine(err),
+                    None => *combined_err = Some(err),
+                }
+            }
+            continue;
+        }
+
         if func_ref.positional_count != 1 {
             let err_msg = format_span_error(
                 file_path,
@@ -337,7 +356,6 @@ fn validate_calls(
             }
         }
 
-        // Check named options
         let allowed_opts = if func_ref.name == "NUMBER" {
             NUMBER_OPTIONS
         } else {
@@ -369,7 +387,6 @@ fn validate_calls(
         }
     }
 
-    // 2. Validate term calls
     for term_ref in term_references {
         let target_term = match locale.terms.get(&term_ref.name) {
             Some(t) => t,
@@ -396,7 +413,6 @@ fn validate_calls(
             }
         };
 
-        // Terms cannot accept positional arguments
         if term_ref.positional_count > 0 {
             let err_msg = format_span_error(
                 file_path,
@@ -416,7 +432,6 @@ fn validate_calls(
             }
         }
 
-        // Required arguments: all variables used in target_term must be passed
         let provided_names: BTreeSet<&str> = term_ref
             .named_args
             .iter()
@@ -444,7 +459,6 @@ fn validate_calls(
             }
         }
 
-        // Unknown arguments: arguments passed that are not in target_term.variables
         for named in &term_ref.named_args {
             if !target_term.variables.contains(&named.name) {
                 let err_msg = format_span_error(
@@ -494,9 +508,7 @@ pub fn validate_locales(
     let mut combined_err: Option<Error> = None;
     let mut warnings: Vec<String> = Vec::new();
 
-    // 1. Validate calls and dependencies across all locales
     for (locale_id, locale) in locales {
-        // Validate messages
         for (msg_id, msg) in &locale.messages {
             let content = locale
                 .file_contents
@@ -518,7 +530,6 @@ pub fn validate_locales(
                 &mut combined_err,
             );
 
-            // Missing messages
             for msg_ref in &msg.message_references {
                 if !locale.messages.contains_key(&msg_ref.name) {
                     let err_msg = format_span_error(
@@ -543,7 +554,6 @@ pub fn validate_locales(
             }
         }
 
-        // Validate terms
         for (term_id, term) in &locale.terms {
             let content = locale
                 .file_contents
@@ -565,7 +575,6 @@ pub fn validate_locales(
                 &mut combined_err,
             );
 
-            // Missing messages
             for msg_ref in &term.message_references {
                 if !locale.messages.contains_key(&msg_ref.name) {
                     let err_msg = format_span_error(
@@ -588,7 +597,6 @@ pub fn validate_locales(
             }
         }
 
-        // 2. Circular dependency detection
         let mut nodes = BTreeSet::new();
         let mut edges: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
@@ -655,7 +663,6 @@ pub fn validate_locales(
         }
     }
 
-    // 3. Mismatched variables and missing translation warnings
     for (locale_id, locale) in locales {
         if locale_id == default_locale_id {
             continue;

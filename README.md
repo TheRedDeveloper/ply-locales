@@ -114,7 +114,9 @@ error: Mismatched Fluent variables in message 'order-summary' for locale 'de-DE'
          = found:    [$order_id, $client, $item_count]
 ```
 
-Missing arguments:
+Because of the strict validation, `ply-locales` supplies a built-in `VOID()` function to ignore unused variables.
+
+There are also errors for missing arguments:
 
 ```text
 error: Missing argument 'hey' in call to term '-variable-inside' in message 'greet' for locale 'en-US'

@@ -28,6 +28,10 @@ fn test_locales_working_runtime() {
     assert_eq!(t::upper("hello"), "HELLO");
     assert_eq!(t::custom_calc(3, 4), 7);
 
+    // Built-in VOID test
+    assert_eq!(t::void_var("male"), "He");
+    assert_eq!(t::void_var("female"), "They");
+
     // Terms and Functions test
     assert_eq!(t::app_title(), "Ply Engine");
     assert_eq!(t::sync_notice(), "Backed up by Firefox Account's.");
@@ -67,6 +71,8 @@ fn test_locales_working_runtime() {
 
     assert_eq!(t::custom_upper("alex"), "Formateado: ALEX");
     assert_eq!(t::sum_result(10, 25), "Suma: 35");
+    assert_eq!(t::void_var("male"), "Él");
+    assert_eq!(t::void_var("female"), "Ellos");
 
     assert_eq!(t::missing_in_es(), "Only in English");
 
@@ -77,6 +83,8 @@ fn test_locales_working_runtime() {
 
     assert_eq!(t::custom_upper("alex"), "Formaté: ALEX");
     assert_eq!(t::sum_result(10, 25), "Somme: 35");
+    assert_eq!(t::void_var("male"), "");
+    assert_eq!(t::void_var("female"), "");
 
     assert_eq!(
         t::user_status("Amélie", 3),

@@ -265,6 +265,9 @@ pub fn generate_module(
                         let mut bundle = fluent_bundle::concurrent::FluentBundle::new_concurrent(vec![langid]);
                         bundle.set_use_isolating(false);
                         let _ = bundle.add_builtins();
+                        let _ = bundle.add_function("VOID", |_positional, _named| {
+                            fluent_bundle::FluentValue::None
+                        });
                         #( #custom_fn_registrations )*
                         for ftl in *raw_files {
                             if let Ok(res) = fluent_bundle::FluentResource::try_new(ftl.to_string()) {

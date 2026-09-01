@@ -29,3 +29,4 @@ shared-photos =
     }.
 custom-upper = Formaté: { UPPER($text) }
 sum-result = Somme: { CUSTOM_CALC($a, $b) }
+void-var = { VOID($gender) }
